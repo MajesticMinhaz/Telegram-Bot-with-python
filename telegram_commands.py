@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 from telegram import Update
 from os.path import join
+from zipfile import ZipFile
 from telegram.constants import ParseMode
 from telegram.ext import CallbackContext
 from telegram.ext import MessageHandler
@@ -9,7 +10,7 @@ from telegram.ext.filters import FORWARDED
 from telegram.ext.filters import Document
 
 
-async def start_callback(update: Update, context: CallbackContext):
+async def start_callback(update: Update, context: CallbackContext) -> None:
     """
     This Function is created for handle /start command on Telegram Bot
     :param update: This update parameter will automatically fill up by python-telegram-bot package. It will update for
@@ -24,7 +25,7 @@ async def start_callback(update: Update, context: CallbackContext):
     )
 
 
-async def upload_session_callback(update: Update, context: CallbackContext):
+async def upload_session_callback(update: Update, context: CallbackContext) -> None:
     """
     This Function is created for /upload_session command handler
     :param update: This update parameter will automatically fill up by python-telegram-bot package. It will update for
@@ -39,7 +40,7 @@ async def upload_session_callback(update: Update, context: CallbackContext):
     )
 
 
-async def send_message_callback(update: Update, context: CallbackContext):
+async def send_message_callback(update: Update, context: CallbackContext) -> None:
     """
     This Function is created for /send_message command handler. It should be use like that /send_message group_username
     :param update: This update parameter will automatically fill up by python-telegram-bot package. It will update for
@@ -60,7 +61,7 @@ async def send_message_callback(update: Update, context: CallbackContext):
     )
 
 
-async def handle_zip_file(update: Update, context: CallbackContext):
+async def handle_zip_file(update: Update, context: CallbackContext) -> None:
     """
     This function is created for handle .zip file
     :param update: This update parameter will automatically fill up by python-telegram-bot package. It will update for
@@ -112,12 +113,73 @@ async def handle_zip_file(update: Update, context: CallbackContext):
     )
 
     """
-    send notify message to user
+    send notification message to user
     """
     await update.effective_message.reply_text(
         text="<code>your zip file was uploaded successfully.</code>",
         parse_mode=ParseMode.HTML
     )
+
+    """
+    Extracting the zip file
+    """
+    session_file_path, total_files = await make_it_unzip(file_path=download_path)
+
+    """
+    send notification message to user
+    """
+    await update.effective_message.reply_text(
+        text=f"<code>{total_files} session files found in the ZIP file.</code>",
+        parse_mode=ParseMode.HTML
+    )
+
+    """
+    send notification to user that current checking the valid sessions.
+    """
+    checking_valid_files = update.effective_message.reply_text(
+        text="<code>Checking valid sessions...</code>",
+        parse_mode=ParseMode.HTML
+    )
+
+
+async def make_it_unzip(file_path: str) -> tuple:
+    """
+    This function is created for unzip the zip file
+    :param file_path: it should be zip files path of server.
+    :return: tuple of session file path and number of session file
+    """
+    with ZipFile(file=file_path, mode='r') as session_zip:
+        """
+        created a variable to store all .session file path
+        """
+        session_file_path = list()
+
+        for file in session_zip.namelist():
+
+            """
+            Check if file contain .session prefix in the file name then pass otherwise fail
+            """
+            if file.__contains__(".session"):
+                """
+                It will extract to extract_session folder to the base directory. so you have to have a folder called as
+                ./extract_session
+                """
+                extract_path = join(os.getcwd(), 'extract_session/')
+
+                session_zip.extract(
+                    member=file,
+                    path=extract_path
+                )
+
+                """
+                appending to session_file_path list
+                """
+                session_file_path.append(extract_path)
+            else:
+                continue
+
+    return session_file_path, len(session_file_path)
+
 
 """
 zip_file_handler variable can check which types of file is sent from users. if it is .zip file then it will response
