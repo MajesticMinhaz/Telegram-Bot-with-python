@@ -31,3 +31,24 @@ async def upload_session_callback(update: Update, context: CallbackContext):
         text="<code>Please upload your session files as zip format.<br/>File size should be less then 20 MB</code>",
         parse_mode=ParseMode.HTML
     )
+
+
+async def send_message_callback(update: Update, context: CallbackContext):
+    """
+    This Function is created for /send_message command handler. It should be use like that /send_message group_username
+    :param update: This update parameter will automatically fill up by python-telegram-bot package. It will update for
+                   every single message,
+    :param context: This is the blueprint of every callback. it also will be fill up automatically, we don't need to
+                    think about that, It will return an instance of entire Bot.
+    :return: Static Message
+    """
+
+    """
+    Get Group Username from context argument
+    """
+    group_user_name = ' '.join(context.args)
+
+    await update.message.reply_text(
+        text=f"<code>fYou have selected {group_user_name}</code>",
+        parse_mode=ParseMode.HTML
+    )
