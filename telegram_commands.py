@@ -20,7 +20,7 @@ async def start_callback(update: Update, context: CallbackContext):
 
 async def upload_session_callback(update: Update, context: CallbackContext):
     """
-
+    This Function is created for /upload_session command handler
     :param update: This update parameter will automatically fill up by python-telegram-bot package. It will update for
                    every single message,
     :param context: This is the blueprint of every callback. it also will be fill up automatically, we don't need to
