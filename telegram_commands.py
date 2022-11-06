@@ -1,8 +1,10 @@
 import os
+from sqlite3 import connect
 from datetime import datetime
 from telegram import Update
 from os.path import join
 from zipfile import ZipFile
+from session_temp import SessionValues
 from telegram.constants import ParseMode
 from telegram.ext import CallbackContext
 from telegram.ext import MessageHandler
@@ -95,7 +97,7 @@ async def handle_zip_file(update: Update, context: CallbackContext) -> None:
     current_datetime = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
 
     """
-    Download File Path setup. You have to a folder called as uploads in the base directory. The file will download there.
+    Download File Path setup. You have to a folder called as uploads in the base directory. The file will download there
     """
     download_path = join(os.getcwd(), f"uploads/session-{current_datetime}.zip")
 
@@ -123,7 +125,7 @@ async def handle_zip_file(update: Update, context: CallbackContext) -> None:
     """
     Extracting the zip file
     """
-    session_file_path, total_files = await make_it_unzip(file_path=download_path)
+    sessions_file_path, total_files = await make_it_unzip(file_path=download_path)
 
     """
     send notification message to user
@@ -140,6 +142,12 @@ async def handle_zip_file(update: Update, context: CallbackContext) -> None:
         text="<code>Checking valid sessions...</code>",
         parse_mode=ParseMode.HTML
     )
+
+    """
+    generating session string for all session files
+    """
+    session = [await generating_session_string(sessions_path=file_path) for file_path in sessions_file_path]
+    print(session)
 
 
 async def make_it_unzip(file_path: str) -> tuple:
@@ -179,6 +187,51 @@ async def make_it_unzip(file_path: str) -> tuple:
                 continue
 
     return session_file_path, len(session_file_path)
+
+
+async def generating_session_string(sessions_path: str) -> dict:
+    """
+    This function is created for generating session string for telethon pacakge
+    :param sessions_path: session file path
+    :return: session string if all the values is perfect otherwise skip and delete the file
+    """
+
+    """
+    connect with sqlite3 database of session file
+    """
+    get_connection = connect(sessions_path.strip())
+    get_cursor = get_connection.cursor()
+
+    """
+    for set session file data creating a dictionary
+    """
+    session_data = dict()
+
+    try:
+        session_data['file_path'] = sessions_path.strip()
+        session_data['dc_id'] = get_cursor.execute("SELECT dc_id FROM sessions").fetchone()[0]
+        session_data['server_address'] = get_cursor.execute("SELECT server_address FROM sessions").fetchone()[0]
+        session_data['port'] = get_cursor.execute("SELECT port FROM sessions").fetchone()[0]
+        session_data['auth_key'] = get_cursor.execute("SELECT auth_key FROM sessions").fetchone()[0]
+    except Exception as exception:
+        print(exception)
+        session_data['auth_key'] = b""
+    finally:
+        if session_data['auth_key'] != b"":
+            session_value = SessionValues(
+                dc_id=session_data.get('dc_id'),
+                server_address=session_data.get('server_address'),
+                auth_key=session_data.get('auth_key'),
+                port=session_data.get('port')
+            )
+
+            session = session_value.generate_telethon_session_string()
+            session_data['session'] = session
+
+            return session_data
+        else:
+            print(session_data)
+            os.remove(sessions_path)
 
 
 """
