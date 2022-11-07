@@ -2,3 +2,4 @@
 __pycache__/
 uploads/
 extract_session/
+Info_DB.sqlite3
