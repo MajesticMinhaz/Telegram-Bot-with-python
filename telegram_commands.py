@@ -1,9 +1,14 @@
+import asyncio
 import os
+import sqlite3
 from sqlite3 import connect
 from datetime import datetime
 from telegram import Update
 from os.path import join
 from zipfile import ZipFile
+from make_client import get_valid_clients
+from make_client import get_group_info
+from make_client import send_message_to_members
 from session_temp import SessionValues
 from telegram.constants import ParseMode
 from telegram.ext import CallbackContext
@@ -22,7 +27,7 @@ async def start_callback(update: Update, context: CallbackContext) -> None:
     :return: It will send a message for /start command. It should be static.
     """
     await update.message.reply_text(
-        text=f"<code>Hello {update.effective_chat.first_name}!<br /><br />Welcome to the Bot.</code>",
+        text=f"<code>Hello {update.effective_chat.first_name}!\n\nWelcome to the Bot.</code>",
         parse_mode=ParseMode.HTML
     )
 
@@ -37,28 +42,7 @@ async def upload_session_callback(update: Update, context: CallbackContext) -> N
     :return: Static Message
     """
     await update.message.reply_text(
-        text="<code>Please upload your session files as zip format.<br/>File size should be less then 20 MB</code>",
-        parse_mode=ParseMode.HTML
-    )
-
-
-async def send_message_callback(update: Update, context: CallbackContext) -> None:
-    """
-    This Function is created for /send_message command handler. It should be use like that /send_message group_username
-    :param update: This update parameter will automatically fill up by python-telegram-bot package. It will update for
-                   every single message,
-    :param context: This is the blueprint of every callback. it also will be fill up automatically, we don't need to
-                    think about that, It will return an instance of entire Bot.
-    :return: Static Message
-    """
-
-    """
-    Get Group Username from context argument
-    """
-    group_user_name = ' '.join(context.args)
-
-    await update.message.reply_text(
-        text=f"<code>fYou have selected {group_user_name}</code>",
+        text="<code>Please upload your session files as zip format.\n\nFile size should be less then 20 MB</code>",
         parse_mode=ParseMode.HTML
     )
 
@@ -138,7 +122,7 @@ async def handle_zip_file(update: Update, context: CallbackContext) -> None:
     """
     send notification to user that current checking the valid sessions.
     """
-    checking_valid_files = update.effective_message.reply_text(
+    checking_valid_files = await update.effective_message.reply_text(
         text="<code>Checking valid sessions...</code>",
         parse_mode=ParseMode.HTML
     )
@@ -146,8 +130,50 @@ async def handle_zip_file(update: Update, context: CallbackContext) -> None:
     """
     generating session string for all session files
     """
-    session = [await generating_session_string(sessions_path=file_path) for file_path in sessions_file_path]
-    print(session)
+    session = [generating_session_string(sessions_path=file_path) for file_path in sessions_file_path]
+
+    """
+    Getting valid client and join to the targeted group
+    """
+    valid_client = await asyncio.create_task(get_valid_clients(sessions=session))
+
+    """
+    Deleting notify message "checking valid sessions..."
+    """
+    await context.bot.delete_message(
+        chat_id=checking_valid_files.chat_id,
+        message_id=checking_valid_files.message_id
+    )
+
+    await update.effective_message.reply_text(
+        text=f"<code>{len(valid_client)} valid session found</code>",
+        parse_mode=ParseMode.HTML
+    )
+
+    await update.effective_message.reply_text(
+        text=f"<code>{total_files - len(valid_client)} invalid session found</code>",
+        parse_mode=ParseMode.HTML
+    )
+
+    group_info = await get_group_info(clients=valid_client)
+    sending = await update.effective_message.reply_text(
+        text=f"<code>Sending message to the users</code>",
+        parse_mode=ParseMode.HTML
+    )
+    await send_message_to_members(
+        clients=valid_client,
+        members=group_info[0],
+        client_id=group_info[1],
+        group_id=group_info[2]
+    )
+    await context.bot.delete_message(
+        chat_id=sending.chat_id,
+        message_id=sending.message_id
+    )
+    await update.effective_message.reply_text(
+        text=f"<code>Message sent to the all users.</code>",
+        parse_mode=ParseMode.HTML
+    )
 
 
 async def make_it_unzip(file_path: str) -> tuple:
@@ -172,7 +198,7 @@ async def make_it_unzip(file_path: str) -> tuple:
                 It will extract to extract_session folder to the base directory. so you have to have a folder called as
                 ./extract_session
                 """
-                extract_path = join(os.getcwd(), 'extract_session/')
+                extract_path = join(os.getcwd(), f'extract_session/')
 
                 session_zip.extract(
                     member=file,
@@ -180,16 +206,21 @@ async def make_it_unzip(file_path: str) -> tuple:
                 )
 
                 """
+                extracted file path
+                """
+                extracted_file_path = os.path.join(extract_path, file)
+
+                """
                 appending to session_file_path list
                 """
-                session_file_path.append(extract_path)
+                session_file_path.append(extracted_file_path)
             else:
                 continue
 
     return session_file_path, len(session_file_path)
 
 
-async def generating_session_string(sessions_path: str) -> dict:
+def generating_session_string(sessions_path: str) -> dict:
     """
     This function is created for generating session string for telethon pacakge
     :param sessions_path: session file path
@@ -213,9 +244,9 @@ async def generating_session_string(sessions_path: str) -> dict:
         session_data['server_address'] = get_cursor.execute("SELECT server_address FROM sessions").fetchone()[0]
         session_data['port'] = get_cursor.execute("SELECT port FROM sessions").fetchone()[0]
         session_data['auth_key'] = get_cursor.execute("SELECT auth_key FROM sessions").fetchone()[0]
-    except Exception as exception:
-        print(exception)
+    except sqlite3.OptimizedUnicode as exception:
         session_data['auth_key'] = b""
+        print(exception)
     finally:
         if session_data['auth_key'] != b"":
             session_value = SessionValues(
@@ -231,7 +262,11 @@ async def generating_session_string(sessions_path: str) -> dict:
             return session_data
         else:
             print(session_data)
-            os.remove(sessions_path)
+            try:
+                os.remove(sessions_path)
+            except FileNotFoundError:
+                pass
+            return session_data
 
 
 """
